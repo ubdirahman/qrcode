@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="so">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>QR Payment Helper</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
+
+  <style>
+    * {
+      box-sizing: border-box;
+      font-family: Arial, sans-serif;
+    }
+
+    body {
+      margin: 0;
+      background: #f4f6f8;
+      color: #222;
+    }
+
+    .container {
+      max-width: 430px;
+      margin: 30px auto;
+      background: white;
+      padding: 25px;
+      border-radius: 18px;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.08);
+    }
+
+    h2 {
+      text-align: center;
+      color: #0f766e;
+    }
+
+    label {
+      font-weight: bold;
+      display: block;
+      margin-top: 15px;
+      margin-bottom: 6px;
+    }
+
+    input {
+      width: 100%;
+      padding: 14px;
+      border: 1px solid #ccc;
+      border-radius: 10px;
+      font-size: 16px;
+    }
+
+    button {
+      width: 100%;
+      padding: 14px;
+      margin-top: 18px;
+      border: none;
+      border-radius: 10px;
+      background: #0f766e;
+      color: white;
+      font-size: 16px;
+      cursor: pointer;
+      font-weight: bold;
+    }
+
+    button:hover {
+      background: #115e59;
+    }
+
+    .link-box {
+      margin-top: 18px;
+      padding: 12px;
+      background: #eefdfb;
+      border: 1px solid #99f6e4;
+      border-radius: 10px;
+      word-break: break-all;
+      font-size: 14px;
+    }
+
+    canvas {
+      display: block;
+      margin: 20px auto;
+      max-width: 100%;
+    }
+
+    .download-btn {
+      background: #2563eb;
+    }
+
+    .receiver-card {
+      background: #f0fdfa;
+      padding: 15px;
+      border-radius: 12px;
+      margin-top: 15px;
+      line-height: 1.6;
+    }
+
+    /* Full screen modal background */
+    .modal-bg {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.65);
+      display: none;
+      justify-content: center;
+      align-items: center;
+      padding: 18px;
+      z-index: 999;
+    }
+
+    /* Amount popup */
+    .amount-modal {
+      width: 100%;
+      max-width: 390px;
+      background: white;
+      border-radius: 22px;
+      padding: 22px;
+      box-shadow: 0 20px 40px rgba(0,0,0,0.3);
+      text-align: center;
+    }
+
+    .amount-modal h3 {
+      margin-top: 0;
+      color: #0f766e;
+    }
+
+    /* Confirmation popup like your screenshot */
+    .confirm-modal {
+      width: 100%;
+      max-width: 420px;
+      background: #242426;
+      color: white;
+      border-radius: 28px;
+      padding: 28px 24px;
+      box-shadow: 0 20px 40px rgba(0,0,0,0.45);
+    }
+
+    .confirm-text {
+      font-size: 19px;
+      line-height: 1.35;
+      margin-bottom: 35px;
+    }
+
+    .pin-line {
+      height: 2px;
+      background: white;
+      opacity: 0.95;
+      margin-bottom: 28px;
+    }
+
+    .confirm-actions {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .confirm-actions button {
+      margin: 0;
+      background: transparent;
+      color: white;
+      font-size: 20px;
+      font-weight: bold;
+      border-radius: 0;
+      width: 50%;
+    }
+
+    .divider {
+      width: 1px;
+      height: 28px;
+      background: rgba(255,255,255,0.25);
+    }
+
+    .success {
+      display: none;
+      margin-top: 15px;
+      padding: 12px;
+      background: #dcfce7;
+      border: 1px solid #86efac;
+      color: #166534;
+      border-radius: 10px;
+      font-weight: bold;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container" id="app"></div>
+
+  <!-- Amount Modal -->
+  <div class="modal-bg" id="amountModal">
+    <div class="amount-modal">
+      <h3>Fadlan geli lacagta</h3>
+      <p id="receiverInfo"></p>
+
+      <input type="number" id="amountInput" placeholder="Tusaale: 0.5" />
+
+      <button onclick="continuePayment()">Continue</button>
+      <button style="background:#dc2626;" onclick="closeAmountModal()">Cancel</button>
+    </div>
+  </div>
+
+  <!-- Confirmation Modal -->
+  <div class="modal-bg" id="confirmModal">
+    <div class="confirm-modal">
+      <div class="confirm-text" id="confirmText"></div>
+
+      <div class="pin-line"></div>
+
+      <div class="confirm-actions">
+        <button onclick="closeConfirmModal()">Cancel</button>
+        <div class="divider"></div>
+        <button onclick="sendPayment()">Send</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const app = document.getElementById("app");
+
+    const params = new URLSearchParams(window.location.search);
+    const receiverName = params.get("name");
+    const receiverPhone = params.get("phone");
+
+    let finalAmount = "";
+
+    // Haddii QR la scan gareeyo oo name + phone jiraan
+    if (receiverName && receiverPhone) {
+      app.innerHTML = `
+        <h2>Payment Page</h2>
+
+        <div class="receiver-card">
+          <strong>Magaca:</strong> ${decodeURIComponent(receiverName)} <br>
+          <strong>Number:</strong> ${receiverPhone}
+        </div>
+
+        <button onclick="openAmountModal()">Geli Lacagta</button>
+
+        <div class="success" id="successMessage">
+          Payment confirmation waa la diyaariyey.
+        </div>
+      `;
+
+      // Automatic popup marka page-ku furmo
+      window.onload = function () {
+        openAmountModal();
+      };
+    }
+
+    // Haddii link caadi ah la furo, generator ha soo baxo
+    else {
+      app.innerHTML = `
+        <h2>QR Payment Generator</h2>
+
+        <label>Receiver Name</label>
+        <input type="text" id="receiverName" placeholder="Tusaale: ABDIRAHMAN AFRAH HASSAN">
+
+        <label>Receiver Phone</label>
+        <input type="text" id="receiverPhone" placeholder="Tusaale: 613201086">
+
+        <button onclick="generateQR()">Generate QR Code</button>
+
+        <div id="linkBox" class="link-box" style="display:none;"></div>
+
+        <canvas id="qrCanvas"></canvas>
+
+        <button id="downloadBtn" class="download-btn" style="display:none;" onclick="downloadQR()">
+          Download QR Code
+        </button>
+      `;
+    }
+
+    function generateQR() {
+      const name = document.getElementById("receiverName").value.trim();
+      const phone = document.getElementById("receiverPhone").value.trim();
+
+      if (!name || !phone) {
+        alert("Fadlan geli magaca iyo numberka.");
+        return;
+      }
+
+      const currentPage = window.location.origin + window.location.pathname;
+      const paymentLink = `${currentPage}?name=${encodeURIComponent(name)}&phone=${encodeURIComponent(phone)}`;
+
+      document.getElementById("linkBox").style.display = "block";
+      document.getElementById("linkBox").innerText = paymentLink;
+
+      QRCode.toCanvas(
+        document.getElementById("qrCanvas"),
+        paymentLink,
+        {
+          width: 260,
+          margin: 2
+        },
+        function (error) {
+          if (error) {
+            alert("QR Code lama sameyn karin.");
+          } else {
+            document.getElementById("downloadBtn").style.display = "block";
+          }
+        }
+      );
+    }
+
+    function downloadQR() {
+      const canvas = document.getElementById("qrCanvas");
+      const link = document.createElement("a");
+      link.download = "payment-qr-code.png";
+      link.href = canvas.toDataURL("image/png");
+      link.click();
+    }
+
+    function openAmountModal() {
+      document.getElementById("receiverInfo").innerHTML =
+        `<strong>${decodeURIComponent(receiverName)}</strong><br>${receiverPhone}`;
+
+      document.getElementById("amountModal").style.display = "flex";
+
+      setTimeout(() => {
+        document.getElementById("amountInput").focus();
+      }, 300);
+    }
+
+    function closeAmountModal() {
+      document.getElementById("amountModal").style.display = "none";
+    }
+
+    function continuePayment() {
+      const amount = document.getElementById("amountInput").value.trim();
+
+      if (!amount || Number(amount) <= 0) {
+        alert("Fadlan geli lacag sax ah.");
+        return;
+      }
+
+      finalAmount = amount;
+
+      document.getElementById("amountModal").style.display = "none";
+
+      document.getElementById("confirmText").innerText =
+        `Uwareeji $${finalAmount} ${decodeURIComponent(receiverName)}(${receiverPhone}), Fadlan geli PIN-kaaga`;
+
+      document.getElementById("confirmModal").style.display = "flex";
+    }
+
+    function closeConfirmModal() {
+      document.getElementById("confirmModal").style.display = "none";
+    }
+
+    function sendPayment() {
+      document.getElementById("confirmModal").style.display = "none";
+
+      const success = document.getElementById("successMessage");
+      if (success) {
+        success.style.display = "block";
+      }
+
+      alert("Confirmation waa la diyaariyey. Lacag dhab ah lama dirin sababtoo ah backend/payment API ma jiro.");
+    }
+  </script>
+
+</body>
+</html>
